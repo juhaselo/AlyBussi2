@@ -1,1 +1,2 @@
-# AlyBussi
+# alybussi
+Älybussipysäkkisovellus
