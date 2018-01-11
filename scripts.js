@@ -1,35 +1,21 @@
 // KELLO
+var clock = document.getElementById('klo');
 
-function startTime() {
-  var today = new Date();
-  var h = today.getHours();
-  var m = today.getMinutes();
-  var s = today.getSeconds();
-  m = checkTime(m);
-  s = checkTime(s);
-  document.getElementById('klo').innerHTML =
-    h + ":" + m + ":" + s;
-  var t = setTimeout(startTime, 500);
-}
+setInterval(function () {
+  var time = moment().format('HH:mm');
+  clock.textContent = time;
+}, 500);
 
-function checkTime(i) {
-  if (i < 10) {
-    i = "0" + i
-  }; // add zero in front of numbers < 10
-  return i;
-}
+moment.locale('fi');
+var weekday = moment().format('dddd');
+var fullDate = moment().format('LL');
 
-window.onload = function () {
-  startTime();
-  getStops();
-}
+$('#weekday').text(weekday + ',');
+$('#fulldate').text(fullDate);
 
 
 
-
-
-
-// NÄYTÖNSÄÄSTÄJÄ
+// NÄYTÖNSÄÄSTÄJÄ, MODAL TIMEOUTIT
 
 $("#naytons").click(function () {
   $("#naytons").fadeOut(800);
@@ -37,13 +23,7 @@ $("#naytons").click(function () {
 
 var idleTime = 0;
 $(document).ready(function () {
-  //Increment the idle time counter every minute.
-  var idleInterval = setInterval(timerIncrement, 60000); // 1 minute
-
-  //Zero the idle timer on mouse movement.
-  $(this).mousemove(function (e) {
-    idleTime = 0;
-  });
+  var idleInterval = setInterval(timerIncrement, 60000);
   $(this).keypress(function (e) {
     idleTime = 0;
   });
@@ -51,18 +31,33 @@ $(document).ready(function () {
 
 function timerIncrement() {
   idleTime = idleTime + 1;
-  if (idleTime > 2) {
-    $("#naytons").fadeIn(800);
-    // Jos näyttö ollut inaktiivisena 3 min, näytönsäästäjä palautuu
+  if (idleTime > 4) {
+    $("#naytons").fadeIn(800); // Jos näyttö ollut inaktiivisena 5 min, näytönsäästäjä palautuu
   }
-}
+};
+
+$('#nappi1').click(function () {
+  setTimeout(function () {
+    $('#hsl1').modal('hide');
+  }, 3 * 60 * 1000);
+});
+
+$('#nappi2').click(function () {
+  setTimeout(function () {
+    $('#palv').modal('hide');
+  }, 3 * 60 * 1000);
+});
+
+$('#nappi3').click(function () {
+  setTimeout(function () {
+    $('#info1').modal('hide');
+  }, 3 * 60 * 1000);
+});
 
 
 
 
-
-
-// UUTISVIRTA & TIEDOITEHAKU
+// UUTISVIRTA JA KIELIASETUS
 
 function uutisVirta() {
   $('.uvirta').marquee({
@@ -115,8 +110,6 @@ function getNewsFeed(urlSetting) {
 
 
 
-
-
 // KIELEN VAIHTO
 
 var langbtn = document.getElementById("langbtn");
@@ -129,7 +122,6 @@ $(document).ready(function () {
     "lang.json",
     function (kieli) {
       function changeFin() {
-        document.getElementById("hsl").innerHTML = kieli.fi.hsl;
         document.getElementById("busHead").innerHTML = kieli.fi.busHead;
         document.getElementById("palvelut").innerHTML = kieli.fi.palvelut;
         document.getElementById("servicesHead").innerHTML = kieli.fi.servicesHead;
@@ -137,24 +129,29 @@ $(document).ready(function () {
         document.getElementById("sohjoa1").innerHTML = kieli.fi.sohjoa1;
         document.getElementById("sohjoa2").innerHTML = kieli.fi.sohjoa2;
         document.getElementById("lang").innerHTML = kieli.fi.lang;
+        document.getElementById("langlogo").src = "images/suomi.png";
       };
 
       function changeEng() {
-        document.getElementById("hsl").innerHTML = kieli.en.hsl;
+        document.getElementById("busHead").innerHTML = kieli.en.busHead;
         document.getElementById("palvelut").innerHTML = kieli.en.palvelut;
-        document.getElementById("info").innerHTML = kieli.en.info;
+        document.getElementById("servicesHead").innerHTML = kieli.en.servicesHead;
+        document.getElementById("info").innerHTML = kieli.fi.info;
         document.getElementById("sohjoa1").innerHTML = kieli.en.sohjoa1;
         document.getElementById("sohjoa2").innerHTML = kieli.en.sohjoa2;
         document.getElementById("lang").innerHTML = kieli.en.lang;
+        document.getElementById("langlogo").src = "images/english.png";
       };
 
       function changeSv() {
-        document.getElementById("hsl").innerHTML = kieli.sv.hsl;
+        document.getElementById("busHead").innerHTML = kieli.sv.busHead;
         document.getElementById("palvelut").innerHTML = kieli.sv.palvelut;
-        document.getElementById("info").innerHTML = kieli.sv.info;
+        document.getElementById("servicesHead").innerHTML = kieli.sv.servicesHead;
+        document.getElementById("info").innerHTML = kieli.fi.info;
         document.getElementById("sohjoa1").innerHTML = kieli.sv.sohjoa1;
         document.getElementById("sohjoa2").innerHTML = kieli.sv.sohjoa2;
         document.getElementById("lang").innerHTML = kieli.sv.lang;
+        document.getElementById("langlogo").src = "images/svenska.png";
       };
 
       var language = 1;
@@ -191,37 +188,207 @@ $(document).ready(function () {
 
 
 
+// GOOGLE SHEETS
+// sijainti (lat & lon), locations (name, lat & lon), polyline markkerit (lat & lon)
 
+function getJson(response) {
+  return response.json();
+}
 
-
-// GOOGLE MAPS -KARTTA
-
-var map;
-var infowindow;
-var sijainti = {
-  lat: 60.1815,
-  lng: 24.830
+function handleError(error) {
+  console.error(error);
 }
 
 
-function initMap() {
 
-  map = new google.maps.Map(document.getElementById('map'), {
-    center: sijainti,
-    zoom: 17,
-    zoomControl: false,
-    streetViewControl: false,
-    scrollwheel: false,
-    draggable: false,
-    mapTypeControl: false,
-    fullscreenControl: false
+
+// GOOGLE MAPS -funktiot
+
+var map;
+var infowindow;
+let generatedMarkerPath = [];
+
+function createMap(sheetData) {
+  sheetData = sheetData.values.filter(value => Object.keys(value).length !== 0).map((array) => {
+    if (array.length === 1) {
+      return array[0];
+    }
+
+    return array;
   });
 
-  var locations = [
-      ['VALIMO', 60.183431, 24.828609, ],
-      ['ACRE', 60.182013, 24.830982],
-      ['INNOVATION<br>ALLEY', 60.180732, 24.831549]
-    ];
+  var sijainti = sheetData.slice(sheetData.indexOf('1. OMA SIJAINTI (kartan keskipiste)') + 2, sheetData.indexOf('2. ÄLYBUSSIN PYSÄKIT (markerit kartalla)'));
+
+  sijainti = {
+    lat: parseFloat(sijainti[0][0]),
+    lng: parseFloat(sijainti[0][1])
+  };
+
+  var locations = sheetData.slice(sheetData.indexOf('2. ÄLYBUSSIN PYSÄKIT (markerit kartalla)') + 2, sheetData.indexOf('3. ÄLYBUSSIN REITIN KOORDINAATIT'));
+
+  var polylines = sheetData.slice(sheetData.indexOf('3. ÄLYBUSSIN REITIN KOORDINAATIT') + 2);
+  var path = polylines.map(item => ({
+    lat: parseFloat(item[0]),
+    lng: parseFloat(item[1]),
+  }));
+
+  /*
+  var sijainti = {
+    lat: 60.1815,
+    lng: 24.83
+  }
+  */
+  console.log(sheetData);
+
+
+
+  let generatedMarkerPath = [];
+  let map;
+  const icon = {
+    url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6d/Green_mark_dot.svg/2000px-Green_mark_dot.svg.png',
+    scaledSize: new google.maps.Size(20, 20), // scaled size
+    origin: new google.maps.Point(0, 0), // origin
+    anchor: new google.maps.Point(5, 5) // anchor
+  };
+
+  function drawArc(fromPoint, toPoint) {
+    let pointsNo = 30;
+    let latDelta = (toPoint.lat() - fromPoint.lat()) / pointsNo;
+    let lngDelta = (toPoint.lng() - fromPoint.lng()) / pointsNo;
+    let positions = [];
+    for (let i = 0; i < pointsNo; i++) {
+      let curLat = fromPoint.lat() + i * latDelta;
+      let curLng = fromPoint.lng() + i * lngDelta;
+      positions.push(new google.maps.LatLng(curLat, curLng));
+
+      let curMarker = new google.maps.Marker({
+        map: map,
+        position: new google.maps.LatLng(curLat, curLng),
+        visible: false,
+        icon: icon
+      });
+      generatedMarkerPath.push(curMarker);
+    }
+  }
+
+  function drawPath(busPath) {
+    for (i = 0; i < busPath.length - 1; i++) {
+      let c1 = busPath[i];
+      let c2 = busPath[i + 1];
+      //console.log('c1: '+c1);
+      //console.log('c2: '+c2);
+      let startPos = new google.maps.LatLng(c1[0], c1[1]);
+      let endPos = new google.maps.LatLng(c2[0], c2[1]);
+      drawArc(startPos, endPos);
+    }
+  }
+
+  function showMovingVehicle(markers, index, delay) {
+    if (index > 0)
+      markers[index - 1].setVisible(false);
+    else {
+      markers[markers.length - 1].setVisible(false);
+    }
+
+    markers[index].setVisible(true);
+    if (index < markers.length - 1) {
+      setTimeout(function () {
+        showMovingVehicle(markers, index + 1, delay);
+      }, delay);
+    } else {
+      showMovingVehicle(markers, 0, delay);
+    }
+  }
+
+  // duplicate coordinates so that bus will come back the same route
+  function createRoundTrip(coordinateArray) {
+    return coordinateArray.concat(coordinateArray.slice().reverse());
+
+  }
+
+  $('input[type=button]').click(function () {
+    console.log('click');
+    let delay = 40;
+    showMovingVehicle(generatedMarkerPath, 0, delay);
+  });
+
+
+  // coming now from file otaniemi.js
+  // 1. give an array of lat-lon pairs to drawPath-function, then call showMovingVehicle (line 73)
+  let otaniemi = [
+    [
+       60.183341,
+       24.828418
+    ],
+    [
+       60.183233,
+       24.828193
+    ],
+    [
+       60.182937,
+       24.828823
+    ],
+    [
+       60.182502,
+       24.829644
+    ],
+    [
+       60.182190,
+       24.830331
+    ],
+    [
+       60.182009,
+       24.830701
+    ],
+    [
+       60.181492,
+       24.831087
+    ],
+    [
+       60.181151,
+       24.831280
+    ],
+    [
+       60.180983,
+       24.830845
+    ],
+    [
+       60.180930,
+       24.830856
+    ],
+    [
+       60.180650,
+       24.831092
+    ],
+    [
+       60.180705,
+       24.831433
+    ]
+ ]
+
+  initializeMap();
+  const otaniemiBackAndForth = createRoundTrip(otaniemi);
+  drawPath(otaniemiBackAndForth);
+
+
+  function initializeMap() {
+    map = new google.maps.Map(document.getElementById('map'), {
+      center: sijainti,
+      zoom: 17,
+      zoomControl: false,
+      streetViewControl: false,
+      scrollwheel: false,
+      draggable: false,
+      mapTypeControl: false,
+      fullscreenControl: false
+    });
+  }
+
+
+
+
+
+
 
   var request = {
     location: sijainti,
@@ -232,43 +399,51 @@ function initMap() {
   service = new google.maps.places.PlacesService(map);
   service.nearbySearch(request, getServices);
 
+  // Tiedot kartan palveluille
   function getPlaceDetails(place, status, title) {
     if (status == google.maps.places.PlacesServiceStatus.OK) {
       var fragment = document.createDocumentFragment();
       var br = document.createElement('br');
+      var container = document.createElement('div');
+      container.classList.add('services-info');
 
-      // Haetaan palveluiden nimet
+      // Hakee palveluiden nimet
       var title = document.createElement('h3');
       title.classList.add('service-title');
       title.textContent = place.name;
-      fragment.appendChild(title);
+      container.appendChild(title);
 
-      // Haetaan osoitteet
+      // Hakee palveluiden osoitteet
       var address = document.createElement('p');
       address.classList.add('service-address');
       address.textContent = place.formatted_address;
 
-      // Generoidaan QR-koodi jokaisen urlin perusteella
-      var qrcode = document.createElement('div');
-      qrcode.setAttribute("id", "qrcode");
-      $("#qrcode").qrcode({
-        width: 100,
-        height: 100,
-        text: place.url
-      });
-      // fragment.appendChild(qrcode);
-      console.log("QR created for " + place.name);
+      // Generoi QR-koodin
+      var qrcode = document.createElement('img');
+      qrcode.classList.add("qrcode");
+      qrcode.setAttribute("id", place.id);
+      var placeUrl = "https://www.google.com/maps/place/" + place.name.replace(/ /g, '+') + "/@" + place.geometry.location.lat() + "," + place.geometry.location.lng();
+      // https://www.google.com/maps/place/Radisson+Blu+Espoo/@60.183647,24.8341114,17z
+      qrcode.src = "http://api.qrserver.com/v1/create-qr-code/?data=" + placeUrl + "!&size=100x100";
+      container.appendChild(qrcode);
 
       var open = place.opening_hours;
       var list = document.createElement('ul');
       list.classList.add('opening-hours-list');
 
+      var isOpen = document.createElement('p');
+      isOpen.classList.add('is-open');
+
       function checkOpeningHours() {
         list.innerHTML = "";
+        isOpen.innerHTML = "";
 
         if (!open) {
           console.warn("No opening hours are available for " + place.name);
-          fragment.appendChild(address);
+          isOpen.style.color = "#d12323";
+          isOpen.textContent = "No details available";
+          container.appendChild(address);
+          container.appendChild(isOpen);
         } else {
           var date = new Date();
           var weekday = new Array(7);
@@ -281,9 +456,6 @@ function initMap() {
           weekday[6] = "lauantai";
 
           var currentDate = weekday[date.getDay()];
-
-          var isOpen = document.createElement('p');
-          isOpen.classList.add('is-open');
 
           if (open.open_now === true) {
 
@@ -308,15 +480,16 @@ function initMap() {
             isOpen.textContent = "closed";
           }
 
-          fragment.appendChild(address);
-          fragment.appendChild(isOpen);
+          container.appendChild(address);
+          container.appendChild(isOpen);
         };
 
       };
 
       checkOpeningHours();
       setInterval(checkOpeningHours, 15 * 60 * 1000);
-      fragment.appendChild(list);
+      container.appendChild(list);
+      fragment.appendChild(container);
 
       document.getElementById("servicesText").appendChild(fragment);
 
@@ -327,7 +500,7 @@ function initMap() {
 
   function getServices(places, status) {
     if (status == google.maps.places.PlacesServiceStatus.OK) {
-      places.forEach(function (place) {
+      places.slice(0, 7).forEach(function (place) {
         var data = {
           name: place.name,
           placeId: place.place_id
@@ -339,6 +512,7 @@ function initMap() {
 
   var marker, i;
 
+  // Polyline markerit
   for (i = 0; i < locations.length; i++) {
     marker = new google.maps.Marker({
       position: new google.maps.LatLng(locations[i][1], locations[i][2]),
@@ -368,7 +542,7 @@ function initMap() {
       // Reference to the DIV that wraps the bottom of infowindow
       var iwOuter = $('.gm-style-iw');
 
-      // Poista infowindow:n häntä
+      // Removes the tail from the info window
       google.maps.event.addListenerOnce(map, 'idle', function () {
         jQuery('.gm-style-iw').prev('div').remove();
       });
@@ -387,58 +561,22 @@ function initMap() {
     scale: 4
   };
 
-  // Create the polyline, passing the symbol in the 'icons' property.
-  // Give the line an opacity of 0.
-  // Repeat the symbol at intervals of 20 pixels to create the dashed effect.
   var line = new google.maps.Polyline({
+
+    /*
     path: [{
         lat: 60.183341,
         lng: 24.828418
       },
+        ...
       {
-        lat: 60.183233,
-        lng: 24.828193
-      },
-      {
-        lat: 60.182937,
-        lng: 24.828823
-            },
-      {
-        lat: 60.182502,
-        lng: 24.829644
-            },
-      {
-        lat: 60.182190,
-        lng: 24.830331
-            },
-      {
-        lat: 60.182009,
-        lng: 24.830701
-            },
-      {
-        lat: 60.181492,
-        lng: 24.831087
-            },
-      {
-        lat: 60.181151,
-        lng: 24.831280
-            },
-      {
-        lat: 60.180983,
-        lng: 24.830845
-            },
-      {
-        lat: 60.180930,
-        lng: 24.830856
-            },
-      {
-        lat: 60.180650,
-        lng: 24.831092
-            },
-      {
-        lat: 60.180705,
-        lng: 24.831433
-            }],
+        lat: ...,
+        lng: ...
+      }
+    }],      
+     */
+
+    path: path,
     strokeOpacity: 0,
     icons: [{
       icon: lineSymbol,
@@ -447,6 +585,110 @@ function initMap() {
           }],
     map: map
   });
+
+  // BUSSIPYSÄKKIEN HAKU
+
+  function getStops() {
+    document.getElementById("busText").innerHTML = '';
+    var query = JSON.stringify({
+      query: '{ stopsByRadius(lat: ' + sijainti.lat + ', lon: ' + sijainti.lng + ', radius: 500) { edges { node { stop { name, lat, lon, stoptimesForPatterns(numberOfDepartures: 1) { pattern { name } stoptimes { scheduledDeparture } } } } } } }'
+    });
+
+    $.ajax({
+      type: "POST",
+      url: "https://api.digitransit.fi/routing/v1/routers/hsl/index/graphql",
+      data: query,
+      contentType: 'application/json; charset=utf-8',
+      success: function (pysakit) {
+        console.log('Refreshing stop times');
+        document.getElementById("busText").innerHTML = '';
+        var fragment = document.createDocumentFragment();
+        var results = pysakit.data.stopsByRadius.edges.forEach(
+          function (edge) {
+            var start_lat = sijainti.lat;
+            var start_lon = sijainti.lng;
+            var lat = edge.node.stop.lat;
+            var lon = edge.node.stop.lon;
+
+            // Laskee etäisyyden nykyisestä sijainnista bussipysäkille
+            function distance(lat1, lon1, lat2, lon2) {
+              var p = 0.017453292519943295;
+              var c = Math.cos;
+              var a = 0.5 - c((lat2 - lat1) * p) / 2 +
+                c(lat1 * p) * c(lat2 * p) *
+                (1 - c((lon2 - lon1) * p)) / 2;
+
+              var result = 12742 * Math.asin(Math.sqrt(a));
+              result = result.toFixed(3) * 1000;
+              return result;
+            }
+
+            var container = document.createElement('div');
+            container.classList.add('stop');
+            var br = document.createElement('br');
+
+            // Hakee pysäkkien nimet
+            var title = document.createElement('h3');
+            title.classList.add('stop-title')
+            title.textContent = edge.node.stop.name + " (" + distance(start_lat, start_lon, lat, lon) + "m)";
+
+            var list = document.createElement('ul');
+            list.classList.add('stop-list');
+
+            // Filteröi tulokset ja hakee vain bussilinjat, jotka kulkevat seuraavan 15 minuutin sisään
+            edge.node.stop.stoptimesForPatterns.filter(function (item) {
+              var today = new Date();
+              var currentSeconds = today.getSeconds() + (60 * today.getMinutes()) + (60 * 60 * today.getHours());
+              var diff = Math.abs(item.stoptimes[0].scheduledDeparture - currentSeconds);
+
+              return diff <= 900;
+            }).map(function (item) {
+              var time = moment.utc(item.stoptimes[0].scheduledDeparture * 1000).format('HH:mm');
+              var name = item.pattern.name.slice(0, -13).replace(' to ', ' ');
+              return {
+                time: time,
+                name: name,
+              };
+            }).sort(function (a, b) {
+              if (a.time < b.time) {
+                return -1;
+              }
+
+              if (a.time > b.time) {
+                return 1;
+              }
+
+              return 0;
+            }).splice(0, 3).forEach(function (item) {
+              var listItem = document.createElement('li');
+              listItem.classList.add('stop-list-item');
+              listItem.textContent = (item.time + '  |  ' + item.name);
+              list.appendChild(listItem);
+            });
+
+            if (list.textContent != "") {
+              container.appendChild(title);
+              container.appendChild(list);
+            }
+
+            if (container.textContent === "") {
+              container.textContent = "No stop times available for " + edge.node.stop.name;
+              console.warn("No stop times available for " + edge.node.stop.name);
+            }
+
+
+            container.appendChild(br);
+            fragment.appendChild(container);
+
+            document.getElementById("busText").appendChild(fragment);
+
+          });
+      }
+    })
+  };
+
+  getStops();
+  setInterval(getStops, 60000);
 }
 
 function callback(results, status) {
@@ -471,120 +713,49 @@ function createMarker(place) {
 }
 
 
+// Google Sheets -tietokantahaku
+fetch("https://sheets.googleapis.com/v4/spreadsheets/1oOiSqkOp_WEj7f21opfQzqpozwEHTb-K9YES7p-Ib8g/values/A1%3AC1000?fields=values&key=AIzaSyAsKit0QXl6tApOMluYh8do3jaKrwfyUxs")
+  .then(getJson)
+  .then(createMap)
+  .catch(handleError);
 
 
+// FOOTER VIDEO
 
-// PYSÄKKIHAKU
 
-function getStops() {
-  document.getElementById("busText").innerHTML = '';
-
-  var query = JSON.stringify({
-    query: '{ stopsByRadius(lat: ' + sijainti.lat + ', lon: ' + sijainti.lng + ', radius: 500) { edges { node { stop { name, lat, lon, stoptimesForPatterns(numberOfDepartures: 1) { pattern { name } stoptimes { scheduledDeparture } } } } } } }'
+function getBannerVideo(videoData) {
+  videoData = videoData.values.filter(value => Object.keys(value).length !== 0).map((array) => {
+    if (array.length === 1) {
+      return array[0];
+    }
+    return array;
   });
 
-  $.ajax({
-    type: "POST",
-    url: "https://api.digitransit.fi/routing/v1/routers/hsl/index/graphql",
-    data: query,
-    contentType: 'application/json; charset=utf-8',
-    success: function (pysakit) {
-      console.log('Pysäkkihaku käynnissä');
-      document.getElementById("busText").innerHTML = '';
-      var fragment = document.createDocumentFragment();
-      var results = pysakit.data.stopsByRadius.edges.forEach(
-        function (edge) {
-          var start_lat = sijainti.lat;
-          var start_lon = sijainti.lng;
-          var lat = edge.node.stop.lat;
-          var lon = edge.node.stop.lon;
+  console.log(videoData);
+  $('.ytvideo').css('margin-top', videoData[1]);
 
-          // Laske etäisyys oman sijainnin ja kaikkien pysäkkien välillä
-          function distance(lat1, lon1, lat2, lon2) {
-            var p = 0.017453292519943295;
-            var c = Math.cos;
-            var a = 0.5 - c((lat2 - lat1) * p) / 2 +
-              c(lat1 * p) * c(lat2 * p) *
-              (1 - c((lon2 - lon1) * p)) / 2;
+  var defaultVideoId = videoData[3].slice(32);
+  var defaultVideo = videoData[3].replace("watch?v=", "embed/") + "?autoplay=1&loop=1&rel=0&amp;controls=0&amp;showinfo=0&disablekb=1&modestbranding=1&mute=1&playlist=" + defaultVideoId;
 
-            var result = 12742 * Math.asin(Math.sqrt(a));
-            result = result.toFixed(3) * 1000;
-            return result;
-          }
+  if (!videoData[5]) {
+    document.getElementById("video").src = defaultVideo;
+  } else {
+    var customVideoId = videoData[5].slice(32);
+    var customVideo = videoData[5].replace("watch?v=", "embed/") + "?autoplay=1&loop=1&rel=0&amp;controls=0&amp;showinfo=0&disablekb=1&modestbranding=1&mute=1&playlist=" + customVideoId;
+    document.getElementById("video").src = customVideo;
+  }
 
-          // Tehdään container, jotta elementtejä on helpompi muokata
-          var container = document.createElement('div');
-          container.classList.add('stop');
-          var br = document.createElement('br');
+  // var videoData = videoData.slice(videoData.indexOf('DEFAULT VIDEO (Sohjoa -projektin mainosvideo)') + 1, videoData.indexOf('OMA VIDEO'));
+}
 
-          // Haetaan pysäkkinimet
-          var title = document.createElement('h3');
-          title.classList.add('stop-title');
-          title.textContent = edge.node.stop.name + " (etäisyys " + distance(start_lat, start_lon, lat, lon) + "m)";
-          container.appendChild(title);
-
-          var list = document.createElement('ul');
-          list.classList.add('stop-list');
-
-          // Haetaan seuraavien lähtevien bussien aikataulut
-          var times = edge.node.stop.stoptimesForPatterns.slice(0, 3).forEach(
-            function (data) {
-              var time = moment.utc(data.stoptimes[0].scheduledDeparture * 1000).format('HH:mm');
-              var name = data.pattern.name.slice(0, -13).replace(' to ', ' ').replace(' (HSL:2222209)', '');
-
-              var listItem = document.createElement('li');
-              listItem.classList.add('stop-list-item');
-              listItem.textContent = (time + '  |  ' + name);
-              list.appendChild(listItem);
-            });
-
-          container.appendChild(list);
-          container.appendChild(br);
-          fragment.appendChild(container);
-
-          document.getElementById("busText").appendChild(fragment);
-
-        });
-    }
-  })
-};
-
-getStops();
-
-setInterval(getStops, 60000);
+fetch("https://sheets.googleapis.com/v4/spreadsheets/1oOiSqkOp_WEj7f21opfQzqpozwEHTb-K9YES7p-Ib8g/values/BANNERIVIDEO!A1%3AC1000?fields=values&key=AIzaSyAsKit0QXl6tApOMluYh8do3jaKrwfyUxs")
+  .then(getJson)
+  .then(getBannerVideo)
+  .catch(handleError);
 
 
 
-/* MAINOSVIDEO */
-
-$(document).ready(function () {
-
-  $.ajax({
-    type: "POST",
-    url: "video.json",
-    contentType: 'application/json; charset=utf-8',
-    success: function (video) {
-      var mainos = document.getElementById('video');
-
-      if (video.video === "") {
-        console.log("Playing default video from " + video.default);
-        mainos.src = video.default;
-      } else {
-        console.log("Playing custom video from " + video.video);
-        mainos.src = video.video;
-      }
-    },
-    error: function () {
-      console.error("Error playing video.");
-    }
-  });
-});
-
-
-
-
-// NAPPULAT
-
+// ARDUINO -FUNKTIOT
 
 document.addEventListener("keyup", function (event) {
   event.preventDefault();
@@ -598,33 +769,3 @@ document.addEventListener("keyup", function (event) {
     document.getElementById("langbtn").click();
   }
 });
-
-/* $(document).ready(function(){
-      //  $( "#target" ).keypress(function() {
-      //console.log( "Handler for .keypress() called." );
-    //});
-
-        $(document).keypress(function(e){
-        var checkMoz1=(e.which==49 ? 1 : 0);
-        var checkMoz2=(e.which==50 ? 1 : 0);
-        var checkMoz3=(e.which==51 ? 1 : 0);
-        var checkMoz4=(e.which==52 ? 1 : 0);
-        var checkMoz5=(e.which==53 ? 1 : 0);
-        var checkMoz6=(e.which==54 ? 1 : 0);
-        
-        if (checkMoz1) {
-        } else if(checkMoz2){ $("body").append("<p>painoit 2</p>");
-        }
-
-        else if (checkMoz3) {$("body").append("<p>painoit 3</p>");
-        }
-        
-        else if (checkMoz4) {$("body").append("<p>painoit 4</p>");
-        }
-        
-        else if (checkMoz5) {$("body").append("<p>painoit 5</p>");
-        }
-        
-        else if (checkMoz6) {$("body").append("<p>painoit 6</p>");
-        }
-    });  */
